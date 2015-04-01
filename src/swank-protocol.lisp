@@ -26,7 +26,6 @@
                            length-string
                            message
                            (string #\Newline))))
-    (format t "Sending: ~A~%" msg)
     (write-sequence msg stream)))
 
 (defun read-message-from-stream (stream)
