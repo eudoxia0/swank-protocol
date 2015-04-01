@@ -21,11 +21,17 @@
 (test basic
   (let ((hostname (uiop:hostname))
         (port (find-ports:find-port)))
-    (princ "Starting server")
     (finishes
-     (start-swank hostname port))
+      (start-swank hostname port))
     (sleep 3)
+    (let ((connection (swank-protocol:make-connection hostname port)))
+      (is-true
+       (swank-protocol:connect connection))
+      (is-true
+       (stringp
+        (swank-protocol:send-message connection
+                                     "(:emacs-rex (swank:connection-info) \"COMMON-LISP-USER\" t 1)"))))
     (finishes
-     (swank:stop-server port))))
+      (swank:stop-server port))))
 
 (run! 'tests)
