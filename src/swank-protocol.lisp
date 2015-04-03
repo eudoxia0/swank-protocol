@@ -4,13 +4,23 @@
   (:export :make-connection
            :connection-hostname
            :connection-port
+           :connection-request-count
+           :connection-package
+           :connection-thread
+           :connection-log-p
+           :connection-logging-stream
            :connect
            :read-message-string
            :send-message-string
+           :message-waiting-p
            :emacs-rex
            :request-connection-info
-           :read-event
-           :read-response)
+           :request-swank-require
+           :request-init-presentations
+           :request-create-repl
+           :request-listener-eval
+           :read-message
+           :parse-response)
   (:documentation "Low-level implementation of a client for the Swank protocol."))
 (in-package :swank-protocol)
 
@@ -59,6 +69,7 @@ Parses length information to determine how many characters to read."
          :documentation "The port to connect to.")
    ;; Internal
    (socket :accessor connection-socket
+           :type usocket:stream-usocket
            :documentation "The usocket socket.")
    (request-count :accessor connection-request-count
                   :initform 0
@@ -108,7 +119,10 @@ Parses length information to determine how many characters to read."
                                 arguments)))))
 
 (defun read-message-string (connection)
-  "Read a message string from a Swank connection."
+  "Read a message string from a Swank connection.
+
+This function will block until it reads everything. Consider message-waiting-p
+to check if input is available."
   (with-slots (socket) connection
     (let ((stream (usocket:socket-stream socket)))
       (when (usocket:wait-for-input socket :timeout 5)
@@ -125,15 +139,28 @@ Parses length information to determine how many characters to read."
       (log-message connection "~%Sent: ~A~%" message)
       message)))
 
-;;; Functions
+(defun message-waiting-p (connection)
+  "t if there's a message in the connection waiting to be read, nil otherwise."
+  (if (usocket:wait-for-input (connection-socket connection)
+                              :ready-only t
+                              :timeout 0)
+      t
+      nil))
 
-(defun emacs-rex (connection form-string)
+;;; Sending messages
+
+(defun emacs-rex (connection form)
+  "(R)emote (E)xecute S-e(X)p.
+
+Send an S-expression command to Swank to evaluate. The resulting response must
+be read with read-response."
   (with-slots (package thread) connection
     (send-message-string
      connection
      (concatenate 'string
                   "(:emacs-rex "
-                  form-string
+                  (with-standard-io-syntax
+                    (prin1-to-string form))
                   " "
                   (prin1-to-string package)
                   " "
@@ -143,15 +170,34 @@ Parses length information to determine how many characters to read."
                   ")"))))
 
 (defun request-connection-info (connection)
-  (emacs-rex connection "(swank:connection-info)"))
+  "Request that Swank provide connection information."
+  (emacs-rex connection `(swank:connection-info)))
 
-(defun read-event (response-string)
-  (with-standard-io-syntax
-    (read-from-string response-string)))
+(defun request-swank-require (connection requirements)
+  "Request that the Swank server load contrib modules. `requirements` must be a list of symbols, e.g. '(swank-repl swank-media)."
+  (emacs-rex connection `(swank:swank-require ',requirements)))
 
-(defun read-response (response-string)
+(defun request-init-presentations (connection)
+  "Request that Swank initiate presentations."
+  (emacs-rex connection `(swank:init-presentations)))
+
+(defun request-create-repl (connection)
+  "Request that Swank create a new REPL."
+  (emacs-rex connection `(swank-repl:create-repl nil :coding-system "utf-8-unix")))
+
+(defun request-listener-eval (connection string)
+  "Request that Swank evaluate a string of code in the REPL."
+  (emacs-rex connection `(swank-repl:listener-eval ,string)))
+
+;;; Reading/parsing messages
+
+(defun read-message (connection)
+  "Read an arbitrary message from a connection."
   (with-standard-io-syntax
-    (let ((response (read-from-string response-string)))
-      (list :status (first (second response))
-            :value (second (second response))
-            :request-id (first (last response))))))
+    (read-from-string (read-message-string connection))))
+
+(defun parse-response (response)
+  "Parse a response from read-event into a more manageable format."
+  (list :status (first (second response))
+        :value (second (second response))
+        :request-id (first (last response))))
