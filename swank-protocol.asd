@@ -6,7 +6,8 @@
   :homepage ""
   :bug-tracker ""
   :source-control (:git "")
-  :depends-on (:usocket)
+  :depends-on (:usocket
+               :swank)
   :components ((:module "src"
                 :serial t
                 :components
