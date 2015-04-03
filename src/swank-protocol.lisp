@@ -189,6 +189,72 @@ be read with read-response."
   "Request that Swank evaluate a string of code in the REPL."
   (emacs-rex connection `(swank-repl:listener-eval ,string)))
 
+(defun request-invoke-restart (connection debug-level restart-number)
+  "Invoke a restart."
+  (emacs-rex connection `(swank:invoke-nth-restart-for-emacs ,debug-level
+                                                             ,restart-number)))
+
+(defun request-throw-to-toplevel (connection)
+  "Leave the debugger."
+  (emacs-rex `(swank:throw-to-toplevel)))
+
+(defun request-input-string (connection tag string)
+  "Send a string to the server's standard input."
+  (with-slots (package thread) connection
+    (send-message-string connection
+                         (concatenate 'string
+                                      "(:emacs-return-string "
+                                      (prin1-to-string thread)
+                                      " "
+                                      (prin1-to-string tag)
+                                      " "
+                                      (prin1-to-string string)
+                                      ")"))))
+#|
+(:debug 1 1
+        ("derp" "   [Condition of type SIMPLE-ERROR]" nil)
+        (("RETRY" "Retry SLIME REPL evaluation request.")
+         ("*ABORT" "Return to SLIME's top level.")
+         ("ABORT" "abort thread (#<THREAD \"repl-thread\" RUNNING {1006010033}>)"))
+        ((0 "(SB-INT:SIMPLE-EVAL-IN-LEXENV (ERROR \"derp\") #<NULL-LEXENV>)")
+         (1 "(EVAL (ERROR \"derp\"))")
+         (2 "(SWANK::EVAL-REGION \"(error \\\"derp\\\") ..)"
+            (:restartable t))
+         (3 "((LAMBDA NIL :IN SWANK-REPL::REPL-EVAL))"
+            (:restartable t))
+         (4 "(SWANK-REPL::TRACK-PACKAGE #<CLOSURE (LAMBDA NIL :IN SWANK-REPL::REPL-EVAL) {1005C5744B}>)"
+            (:restartable t))
+         (5 "((LAMBDA NIL :IN SWANK-REPL::REPL-EVAL))"
+            (:restartable t))
+         (6 "(SWANK::CALL-WITH-RETRY-RESTART \"Retry SLIME REPL evaluation request.\" #<CLOSURE (LAMBDA NIL :IN SWANK-REPL::REPL-EVAL) {1005C573AB}>)"
+            (:restartable t))
+         (7 "((LAMBDA NIL :IN SWANK-REPL::REPL-EVAL))"
+            (:restartable t))
+         (8 "(SWANK/BACKEND:CALL-WITH-SYNTAX-HOOKS #<CLOSURE (LAMBDA NIL :IN SWANK-REPL::REPL-EVAL) {1005C5738B}>)"
+            (:restartable t))
+         (9 "(SWANK::CALL-WITH-BUFFER-SYNTAX NIL #<CLOSURE (LAMBDA NIL :IN SWANK-REPL::REPL-EVAL) {1005C5738B}>)"
+            (:restartable t))
+         (10 "(SWANK-REPL::REPL-EVAL \"(error \\\"derp\\\") ..)"
+             (:restartable t))
+         (11 "(SWANK-REPL:LISTENER-EVAL \"(error \\\"derp\\\") ..)"
+             (:restartable t))
+         (12 "(SB-INT:SIMPLE-EVAL-IN-LEXENV (SWANK-REPL:LISTENER-EVAL \"(error \\\"derp\\\") ..)")
+         (13 "(EVAL (SWANK-REPL:LISTENER-EVAL \"(error \\\"derp\\\") ..)")
+         (14 "(SWANK:EVAL-FOR-EMACS (SWANK-REPL:LISTENER-EVAL \"(error \\\"derp\\\") ..)"
+             (:restartable t))
+         (15 "(SWANK::PROCESS-REQUESTS NIL)"
+             (:restartable t))
+         (16 "((LAMBDA NIL :IN SWANK::HANDLE-REQUESTS))"
+             (:restartable t))
+         (17 "((LAMBDA NIL :IN SWANK::HANDLE-REQUESTS))"
+             (:restartable t))
+         (18 "(SWANK/SBCL::CALL-WITH-BREAK-HOOK #<FUNCTION SWANK:SWANK-DEBUGGER-HOOK> #<CLOSURE (LAMBDA NIL :IN SWANK::HANDLE-REQUESTS) {100601800B}>)")
+         (19 "((FLET SWANK/BACKEND:CALL-WITH-DEBUGGER-HOOK :IN \"/home/eudoxia/.quicklisp/dists/quicklisp/software/slime-2.12/swank/sbcl.lisp\") #<FUNCTION SWANK:SWANK-DEBUGGER-HOOK> #<CLOSURE (LAMBDA NIL :IN SWANK::.."))
+        (124))
+
+(:read-string 1 1)
+|#
+
 ;;; Reading/parsing messages
 
 (defun read-message (connection)
