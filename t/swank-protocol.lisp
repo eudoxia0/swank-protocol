@@ -5,8 +5,6 @@
 
 ;;; Utilities
 
-(defparameter *start-port* 40000)
-
 (defun start-swank (hostname port)
   (setf swank:*configure-emacs-indentation* nil
         swank::*enable-event-history* nil
@@ -28,7 +26,7 @@
 (defmacro with-connection ((conn &key logp) &body body)
   (alexandria:with-gensyms (hostname port)
     `(let ((,hostname (uiop:hostname))
-           (,port (incf *start-port*)))
+           (,port (find-port:find-port)))
        (with-swank-server (,hostname ,port)
          (let ((,conn (swank-protocol:make-connection ,hostname ,port
                                                       :logp ,logp)))
@@ -41,8 +39,8 @@
     `(progn
        (is
         (stringp ,request))
-       (let* ((,resp-str (swank-protocol:read-message-string ,conn))
-              (,name (swank-protocol:read-response ,resp-str)))
+       (let* ((,resp-str (swank-protocol:read-message ,conn))
+              (,name (swank-protocol:parse-response ,resp-str)))
          ,@body))))
 
 ;;; Tests
@@ -70,14 +68,22 @@
 
 (test (basic-requests :depends-on connect)
   (with-connection (conn :logp t)
+    (is-false
+      (swank-protocol:message-waiting-p conn))
     (is-true
      (stringp
       (swank-protocol:send-message-string
        conn
        "(:emacs-rex (swank:connection-info) \"COMMON-LISP-USER\" t 1)")))
+    (is-true
+     (progn
+       (sleep 0.2) ;; Ensure the reply has been sent
+       (swank-protocol:message-waiting-p conn)))
     (let ((resp (swank-protocol:read-message-string conn)))
       (is
-       (stringp resp)))))
+       (stringp resp))
+      (is-false
+       (swank-protocol:message-waiting-p conn)))))
 
 (test (connection-info :depends-on basic-requests)
   (with-connection (conn)
@@ -88,13 +94,25 @@
        (equal (getf resp :status) :ok))
       (is
        (equal (getf (getf resp :value) :style)
-              :spawn)))))
+              :spawn)))
+    (with-response (conn resp (swank-protocol:request-swank-require conn
+                                                                    '(swank-repl)))
+      (is
+       (equal (getf resp :request-id) 2))
+      (is
+       (equal (getf resp :status) :ok)))))
 
 (test (repl :depends-on basic-requests)
   (with-connection (conn)
     ;; Create REPL
+    (with-response (conn resp (swank-protocol:request-init-presentations conn))
+      (is
+       (equal (getf resp :request-id) 1)))
+    (with-response (conn resp (swank-protocol:request-create-repl conn))
+      (is
+       (equal (getf resp :request-id) 2)))
     ;; Evaluate
-    ;; Read presentation messages
-    t))
+    (finishes
+     (swank-protocol:request-listener-eval conn "(+ 2 2)"))))
 
 (run! 'tests)
