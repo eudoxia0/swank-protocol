@@ -4,7 +4,8 @@
   :depends-on (:swank-protocol
                :swank
                :fiveam
-               :alexandria)
+               :alexandria
+               :find-port)
   :components ((:module "t"
                 :serial t
                 :components
