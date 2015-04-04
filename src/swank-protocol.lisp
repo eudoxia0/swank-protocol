@@ -159,6 +159,11 @@ to check if input is available."
 
 ;;; Sending messages
 
+(defmacro with-swank-syntax (() &body body)
+  `(with-standard-io-syntax
+     (let ((*package* (find-package :swank-io-package)))
+       ,@body)))
+
 (defun emacs-rex (connection form)
   "(R)emote (E)xecute S-e(X)p.
 
@@ -167,7 +172,7 @@ be read with read-response."
   (with-slots (package thread) connection
     (let ((msg (concatenate 'string
                             "(:emacs-rex "
-                            (with-standard-io-syntax
+                            (with-swank-syntax ()
                               (prin1-to-string form))
                             " "
                             (prin1-to-string package)
@@ -185,7 +190,10 @@ be read with read-response."
 
 (defun request-swank-require (connection requirements)
   "Request that the Swank server load contrib modules. `requirements` must be a list of symbols, e.g. '(swank-repl swank-media)."
-  (emacs-rex connection `(swank:swank-require ',requirements)))
+  (emacs-rex connection
+             `(swank:swank-require ',(loop for item in requirements collecting
+                                       (intern (symbol-name item)
+                                               (find-package :swank-io-package))))))
 
 (defun request-init-presentations (connection)
   "Request that Swank initiate presentations."
@@ -215,7 +223,7 @@ be read with read-response."
                             "(:emacs-return-string "
                             (prin1-to-string
                              ;(connection-thread connection)
-                             2) ;idk
+                             1) ;idk
                             " "
                             (prin1-to-string
                              (incf (connection-read-count connection)))
@@ -234,7 +242,7 @@ be read with read-response."
 
 (defun read-message (connection)
   "Read an arbitrary message from a connection."
-  (with-standard-io-syntax
+  (with-swank-syntax ()
     (read-from-string (read-message-string connection))))
 
 (defun read-all-messages (connection)
