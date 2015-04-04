@@ -17,8 +17,11 @@
                                (swank:create-server :port ~D :dont-close t))"
                             ,port)))
             (,process (inferior-lisp:make-process "sbcl"
-                                             :startup-code startup)))
+                                                  :startup-code startup)))
        (inferior-lisp:start ,process)
+       (inferior-lisp:send-input-with-newline ,process
+                                              "(princ (SWANK:INIT-PRESENTATIONS))")
+       (sleep 1)
        (sleep 2)
        (unwind-protect
             (progn
@@ -49,13 +52,21 @@
 
 (defmacro with-repl ((conn) &body body)
   `(progn
+     ;; Require everything
+     (with-response (conn resp (swank-protocol:request-swank-require
+                                conn
+                                '(swank-presentations swank-repl)))
+       ;; Read all messages
+       (sleep 0.1)
+       (let ((messages (swank-protocol:read-all-messages conn)))
+         t))
      ;; Create REPL
      (with-response (,conn resp (swank-protocol:request-init-presentations ,conn))
        (is
-        (equal (getf resp :request-id) 1)))
+        (equal (getf resp :request-id) 2)))
      (with-response (,conn resp (swank-protocol:request-create-repl ,conn))
        (is
-        (equal (getf resp :request-id) 2)))
+        (equal (getf resp :request-id) 3)))
      ,@body))
 
 ;;; Tests
@@ -126,7 +137,6 @@
       ;; Wait for all the presentations to show
       (sleep 0.1)
       (let ((messages (swank-protocol:read-all-messages conn)))
-        (print messages)
         (is
          (equal (length messages) 5))
         (is
@@ -165,7 +175,9 @@
       (swank-protocol:request-throw-to-toplevel conn)
       (let ((message (swank-protocol:read-message conn)))
         (is (equal (first message)
-                   :return)))))
+                   :return))))))
+
+(test (restarts :depends-on debugging)
   (with-connection (conn)
     (with-repl (conn)
       ;; Trigger an error
@@ -194,7 +206,7 @@
                 :read-string))
         (is
          (equal (second message)
-                2))
+                1))
         (is
          (equal (third message)
                 1)))
