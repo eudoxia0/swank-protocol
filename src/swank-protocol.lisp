@@ -19,8 +19,14 @@
            :request-init-presentations
            :request-create-repl
            :request-listener-eval
+           :request-invoke-restart
+           :request-throw-to-toplevel
+           :request-input-string
+           :request-input-string-newline
            :read-message
-           :parse-response)
+           :read-all-messages
+           :parse-response
+           :parse-debug)
   (:documentation "Low-level implementation of a client for the Swank protocol."))
 (in-package :swank-protocol)
 
@@ -75,6 +81,10 @@ Parses length information to determine how many characters to read."
                   :initform 0
                   :type integer
                   :documentation "A number that is increased and sent along with every request.")
+   (read-count :accessor connection-read-count
+               :initform 0
+               :type integer
+               :documentation "Counter of the number of times read is called in the server's REPL.")
    (package :accessor connection-package
             :initform "COMMON-LISP-USER"
             :type string
@@ -155,19 +165,19 @@ to check if input is available."
 Send an S-expression command to Swank to evaluate. The resulting response must
 be read with read-response."
   (with-slots (package thread) connection
-    (send-message-string
-     connection
-     (concatenate 'string
-                  "(:emacs-rex "
-                  (with-standard-io-syntax
-                    (prin1-to-string form))
-                  " "
-                  (prin1-to-string package)
-                  " "
-                  (prin1-to-string thread)
-                  " "
-                  (write-to-string (incf (connection-request-count connection)))
-                  ")"))))
+    (let ((msg (concatenate 'string
+                            "(:emacs-rex "
+                            (with-standard-io-syntax
+                              (prin1-to-string form))
+                            " "
+                            (prin1-to-string package)
+                            " "
+                            (prin1-to-string thread)
+                            " "
+                            (write-to-string
+                             (incf (connection-request-count connection)))
+                            ")")))
+      (send-message-string connection msg))))
 
 (defun request-connection-info (connection)
   "Request that Swank provide connection information."
@@ -196,64 +206,29 @@ be read with read-response."
 
 (defun request-throw-to-toplevel (connection)
   "Leave the debugger."
-  (emacs-rex `(swank:throw-to-toplevel)))
+  (emacs-rex connection `(swank:throw-to-toplevel)))
 
-(defun request-input-string (connection tag string)
+(defun request-input-string (connection string)
   "Send a string to the server's standard input."
   (with-slots (package thread) connection
-    (send-message-string connection
-                         (concatenate 'string
-                                      "(:emacs-return-string "
-                                      (prin1-to-string thread)
-                                      " "
-                                      (prin1-to-string tag)
-                                      " "
-                                      (prin1-to-string string)
-                                      ")"))))
-#|
-(:debug 1 1
-        ("derp" "   [Condition of type SIMPLE-ERROR]" nil)
-        (("RETRY" "Retry SLIME REPL evaluation request.")
-         ("*ABORT" "Return to SLIME's top level.")
-         ("ABORT" "abort thread (#<THREAD \"repl-thread\" RUNNING {1006010033}>)"))
-        ((0 "(SB-INT:SIMPLE-EVAL-IN-LEXENV (ERROR \"derp\") #<NULL-LEXENV>)")
-         (1 "(EVAL (ERROR \"derp\"))")
-         (2 "(SWANK::EVAL-REGION \"(error \\\"derp\\\") ..)"
-            (:restartable t))
-         (3 "((LAMBDA NIL :IN SWANK-REPL::REPL-EVAL))"
-            (:restartable t))
-         (4 "(SWANK-REPL::TRACK-PACKAGE #<CLOSURE (LAMBDA NIL :IN SWANK-REPL::REPL-EVAL) {1005C5744B}>)"
-            (:restartable t))
-         (5 "((LAMBDA NIL :IN SWANK-REPL::REPL-EVAL))"
-            (:restartable t))
-         (6 "(SWANK::CALL-WITH-RETRY-RESTART \"Retry SLIME REPL evaluation request.\" #<CLOSURE (LAMBDA NIL :IN SWANK-REPL::REPL-EVAL) {1005C573AB}>)"
-            (:restartable t))
-         (7 "((LAMBDA NIL :IN SWANK-REPL::REPL-EVAL))"
-            (:restartable t))
-         (8 "(SWANK/BACKEND:CALL-WITH-SYNTAX-HOOKS #<CLOSURE (LAMBDA NIL :IN SWANK-REPL::REPL-EVAL) {1005C5738B}>)"
-            (:restartable t))
-         (9 "(SWANK::CALL-WITH-BUFFER-SYNTAX NIL #<CLOSURE (LAMBDA NIL :IN SWANK-REPL::REPL-EVAL) {1005C5738B}>)"
-            (:restartable t))
-         (10 "(SWANK-REPL::REPL-EVAL \"(error \\\"derp\\\") ..)"
-             (:restartable t))
-         (11 "(SWANK-REPL:LISTENER-EVAL \"(error \\\"derp\\\") ..)"
-             (:restartable t))
-         (12 "(SB-INT:SIMPLE-EVAL-IN-LEXENV (SWANK-REPL:LISTENER-EVAL \"(error \\\"derp\\\") ..)")
-         (13 "(EVAL (SWANK-REPL:LISTENER-EVAL \"(error \\\"derp\\\") ..)")
-         (14 "(SWANK:EVAL-FOR-EMACS (SWANK-REPL:LISTENER-EVAL \"(error \\\"derp\\\") ..)"
-             (:restartable t))
-         (15 "(SWANK::PROCESS-REQUESTS NIL)"
-             (:restartable t))
-         (16 "((LAMBDA NIL :IN SWANK::HANDLE-REQUESTS))"
-             (:restartable t))
-         (17 "((LAMBDA NIL :IN SWANK::HANDLE-REQUESTS))"
-             (:restartable t))
-         (18 "(SWANK/SBCL::CALL-WITH-BREAK-HOOK #<FUNCTION SWANK:SWANK-DEBUGGER-HOOK> #<CLOSURE (LAMBDA NIL :IN SWANK::HANDLE-REQUESTS) {100601800B}>)")
-         (19 "((FLET SWANK/BACKEND:CALL-WITH-DEBUGGER-HOOK :IN \"/home/eudoxia/.quicklisp/dists/quicklisp/software/slime-2.12/swank/sbcl.lisp\") #<FUNCTION SWANK:SWANK-DEBUGGER-HOOK> #<CLOSURE (LAMBDA NIL :IN SWANK::.."))
-        (124))
+    (let ((msg (concatenate 'string
+                            "(:emacs-return-string "
+                            (prin1-to-string
+                             ;(connection-thread connection)
+                             2) ;idk
+                            " "
+                            (prin1-to-string
+                             (incf (connection-read-count connection)))
+                            " "
+                            (prin1-to-string string)
+                            ")")))
+      (send-message-string connection msg))))
 
-(:read-string 1 1)
-|#
+(defun request-input-string-newline (connection string)
+  (request-input-string connection
+                        (concatenate 'string
+                                     string
+                                     (string #\Newline))))
 
 ;;; Reading/parsing messages
 
@@ -262,8 +237,27 @@ be read with read-response."
   (with-standard-io-syntax
     (read-from-string (read-message-string connection))))
 
+(defun read-all-messages (connection)
+  (loop while (message-waiting-p connection) collecting
+    (read-message connection)))
+
 (defun parse-response (response)
   "Parse a response from read-event into a more manageable format."
   (list :status (first (second response))
         :value (second (second response))
         :request-id (first (last response))))
+
+(defun parse-debug (message)
+  "Parse a debug message into something more manageable."
+  (destructuring-bind (thread level condition restarts stack conts)
+      (rest message)
+    (declare (ignore conts))
+    (list :thread thread
+          :level level
+          :condition (remove-if #'null condition)
+          :restarts (loop for restart in restarts collecting
+                      (list :id (first restart)
+                            :text (second restart)))
+          :stack (loop for frame in stack collecting
+                   (list :id (first frame)
+                         :text (second frame))))))
