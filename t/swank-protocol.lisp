@@ -44,7 +44,7 @@
        (is
         (stringp ,request))
        (let* ((,response-string (swank-protocol:read-message ,conn))
-              (,name (swank-protocol:parse-response ,response-string)))
+              (,name (parse-response ,response-string)))
          ,@body))))
 
 (defmacro with-repl ((conn) &body body)
@@ -65,6 +65,27 @@
        (is
         (equal (getf resp :request-id) 3)))
      ,@body))
+
+(defun parse-response (response)
+  "Parse a response from read-event into a more manageable format."
+  (list :status (first (second response))
+        :value (second (second response))
+        :request-id (first (last response))))
+
+(defun parse-debug (message)
+  "Parse a debug message into something more manageable."
+  (destructuring-bind (thread level condition restarts stack conts)
+      (rest message)
+    (declare (ignore conts))
+    (list :thread thread
+          :level level
+          :condition (remove-if #'null condition)
+          :restarts (loop for restart in restarts collecting
+                      (list :id (first restart)
+                            :text (second restart)))
+          :stack (loop for frame in stack collecting
+                   (list :id (first frame)
+                         :text (second frame))))))
 
 ;;; Tests
 
@@ -156,7 +177,7 @@
         (is
          (equal (first debug-msg)
                 :debug))
-        (let ((info (swank-protocol:parse-debug debug-msg)))
+        (let ((info (parse-debug debug-msg)))
           (is (equal (getf info :thread)
                      1))
           (is
@@ -238,7 +259,7 @@
         (is
          (equal (first debug-msg)
                 :debug))
-        (let ((info (swank-protocol:parse-debug debug-msg)))
+        (let ((info (parse-debug debug-msg)))
           (is (equal (getf info :thread)
                      1))
           (is

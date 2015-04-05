@@ -1,7 +1,8 @@
 (in-package :cl-user)
 (defpackage swank-protocol
   (:use :cl)
-  (:export :make-connection
+  (:export :connection
+           :make-connection
            :connection-hostname
            :connection-port
            :connection-request-count
@@ -24,9 +25,7 @@
            :request-input-string
            :request-input-string-newline
            :read-message
-           :read-all-messages
-           :parse-response
-           :parse-debug)
+           :read-all-messages)
   (:documentation "Low-level implementation of a client for the Swank protocol."))
 (in-package :swank-protocol)
 
@@ -254,24 +253,3 @@ be read with read-response."
 (defun read-all-messages (connection)
   (loop while (message-waiting-p connection) collecting
     (read-message connection)))
-
-(defun parse-response (response)
-  "Parse a response from read-event into a more manageable format."
-  (list :status (first (second response))
-        :value (second (second response))
-        :request-id (first (last response))))
-
-(defun parse-debug (message)
-  "Parse a debug message into something more manageable."
-  (destructuring-bind (thread level condition restarts stack conts)
-      (rest message)
-    (declare (ignore conts))
-    (list :thread thread
-          :level level
-          :condition (remove-if #'null condition)
-          :restarts (loop for restart in restarts collecting
-                      (list :id (first restart)
-                            :text (second restart)))
-          :stack (loop for frame in stack collecting
-                   (list :id (first frame)
-                         :text (second frame))))))
