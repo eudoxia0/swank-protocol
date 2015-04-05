@@ -19,10 +19,7 @@
             (,process (inferior-lisp:make-process "sbcl"
                                                   :startup-code startup)))
        (inferior-lisp:start ,process)
-       (inferior-lisp:send-input-with-newline ,process
-                                              "(princ (SWANK:INIT-PRESENTATIONS))")
        (sleep 1)
-       (sleep 2)
        (unwind-protect
             (progn
               ,@body)
@@ -160,8 +157,8 @@
          (equal (first debug-msg)
                 :debug))
         (let ((info (swank-protocol:parse-debug debug-msg)))
-          (is
-           (integerp (getf info :thread)))
+          (is (equal (getf info :thread)
+                     1))
           (is
            (equal (getf info :level)
                   1))
@@ -173,9 +170,62 @@
                 :debug-activate)))
       ;; Leave the debugger
       (swank-protocol:request-throw-to-toplevel conn)
+      ;; Read messages
       (let ((message (swank-protocol:read-message conn)))
         (is (equal (first message)
-                   :return))))))
+                   :return))
+        (is (equal (first (second message))
+                   :abort)))
+      ;; Send some regular code
+      (finishes
+        (swank-protocol:request-listener-eval conn "(+ 1 1)"))
+      ;; Read messages
+      (sleep 0.1)
+      (let ((messages (swank-protocol:read-all-messages conn)))
+        (is
+         (equal (length messages) 5))
+        (is
+         (equal (list :presentation-start
+                      :write-string
+                      :presentation-end
+                      :write-string
+                      :return)
+                (loop for i from 0 to 4 collecting
+                  (first (nth i messages)))))))))
+
+#|
+(:emacs-rex
+ (swank-repl:listener-eval "(error \"derp\")\n")
+ "COMMON-LISP-USER" :repl-thread 13)
+(:debug 1 1
+        ("derp" "   [Condition of type SIMPLE-ERROR]" nil)
+        (("RETRY" "Retry SLIME REPL evaluation request.")
+         ("*ABORT" "Return to SLIME's top level.")
+         ("ABORT" "abort thread (#<THREAD \"repl-thread\" RUNNING {1006040033}>)"))
+        (...)
+(:debug-activate 1 1 nil)
+(:emacs-rex
+ (swank:invoke-nth-restart-for-emacs 1 0)
+ "COMMON-LISP-USER" 1 14)
+(:return
+ (:abort "NIL")
+ 14)
+(:debug-return 1 1 nil)
+(:debug 1 1
+        ("derp" "   [Condition of type SIMPLE-ERROR]" nil)
+        (("RETRY" "Retry SLIME REPL evaluation request.")
+         ("*ABORT" "Return to SLIME's top level.")
+         ("ABORT" "abort thread (#<THREAD \"repl-thread\" RUNNING {1006040033}>)"))
+        (...)
+(:debug-activate 1 1 nil)
+(:emacs-rex
+ (swank:throw-to-toplevel)
+ "COMMON-LISP-USER" 1 15)
+(:return
+ (:abort "NIL")
+ 15)
+(:debug-return 1 1 nil)
+|#
 
 (test (restarts :depends-on debugging)
   (with-connection (conn)
@@ -183,11 +233,26 @@
       ;; Trigger an error
       (finishes
        (swank-protocol:request-listener-eval conn "(error \"message\")"))
-      ;; Read debug message and do nothing
-      (swank-protocol:read-message conn)
+      ;; Read debugging messages
+      (let ((debug-msg (swank-protocol:read-message conn)))
+        (is
+         (equal (first debug-msg)
+                :debug))
+        (let ((info (swank-protocol:parse-debug debug-msg)))
+          (is (equal (getf info :thread)
+                     1))
+          (is
+           (equal (getf info :level)
+                  1))
+          (is
+           (every #'stringp (getf info :condition)))))
+      (let ((debug-msg (swank-protocol:read-message conn)))
+        (is
+         (equal (first debug-msg)
+                :debug-activate)))
       ;; Invoke a restart
       (finishes
-       (swank-protocol:request-invoke-restart conn 1 1))
+       (swank-protocol:request-invoke-restart conn 1 0))
       ;; Read all messages
       (sleep 0.1)
       (let ((messages (swank-protocol:read-all-messages conn)))
