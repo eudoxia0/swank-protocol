@@ -30,6 +30,11 @@
   (:documentation "Low-level implementation of a client for the Swank protocol."))
 (in-package :swank-protocol)
 
+;;; Prevent reader errors
+
+(eval-when (:compile-toplevel :load-toplevel)
+  (swank:swank-require '(swank-presentations swank-repl)))
+
 ;;; Encoding and decoding messages
 
 (defun encode-integer (integer)
@@ -233,6 +238,7 @@ be read with read-response."
       (send-message-string connection msg))))
 
 (defun request-input-string-newline (connection string)
+  "Send a string to the server's standard input with a newline at the end."
   (request-input-string connection
                         (concatenate 'string
                                      string
