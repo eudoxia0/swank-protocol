@@ -9,8 +9,8 @@
            :connection-package
            :connection-thread
            :connection-log-p
-           :connection-logging-stream
-           :connect
+           :connection-logging-stream)
+  (:export :connect
            :read-message-string
            :send-message-string
            :message-waiting-p
@@ -165,7 +165,8 @@ to check if input is available."
 
 (defmacro with-swank-syntax (() &body body)
   `(with-standard-io-syntax
-     (let ((*package* (find-package :swank-io-package)))
+     (let ((*package* (find-package :swank-io-package))
+           (*print-case* :downcase))
        ,@body)))
 
 (defun emacs-rex (connection form)
@@ -181,7 +182,10 @@ be read with read-response."
                             " "
                             (prin1-to-string package)
                             " "
-                            (prin1-to-string thread)
+                            (if (eq (first form)
+                                    'swank-repl:listener-eval)
+                                ":repl-thread"
+                                (prin1-to-string thread))
                             " "
                             (write-to-string
                              (incf (connection-request-count connection)))
@@ -205,7 +209,9 @@ be read with read-response."
 
 (defun request-create-repl (connection)
   "Request that Swank create a new REPL."
-  (emacs-rex connection `(swank-repl:create-repl nil :coding-system "utf-8-unix")))
+  (prog1
+      (emacs-rex connection `(swank-repl:create-repl nil :coding-system "utf-8-unix"))
+    (setf (connection-thread connection) 1)))
 
 (defun request-listener-eval (connection string)
   "Request that Swank evaluate a string of code in the REPL."
@@ -226,8 +232,7 @@ be read with read-response."
     (let ((msg (concatenate 'string
                             "(:emacs-return-string "
                             (prin1-to-string
-                             ;(connection-thread connection)
-                             1) ;idk
+                             (connection-thread connection))
                             " "
                             (prin1-to-string
                              (incf (connection-read-count connection)))
