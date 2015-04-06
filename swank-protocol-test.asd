@@ -3,7 +3,8 @@
   :license "MIT"
   :depends-on (:swank-protocol
                :fiveam
-               :inferior-lisp)
+               :inferior-lisp
+               :alexandria)
   :components ((:module "t"
                 :serial t
                 :components

@@ -5,32 +5,25 @@
 
 ;;; Utilities
 
-(defmacro with-inferior-lisp ((port) &body body)
-  (let ((process (gensym)))
-    `(let* ((startup
-              (list "(ql:quickload :swank)"
-                    "(setf swank:*configure-emacs-indentation* nil)"
-                    "(setf swank::*enable-event-history* nil)"
-                    "(setf swank:*log-events* t)"
-                    (format nil
-                            "(let ((swank::*loopback-interface* (uiop:hostname)))
+(defmacro with-swank-lisp ((port) &body body)
+  (alexandria:with-gensyms (code process)
+    `(let ((,code (list "(ql:quickload :swank)"
+                        "(setf swank:*configure-emacs-indentation* nil)"
+                        "(setf swank::*enable-event-history* nil)"
+                        "(setf swank:*log-events* t)"
+                        (format nil
+                                "(let ((swank::*loopback-interface* (uiop:hostname)))
                                (swank:create-server :port ~D :dont-close t))"
-                            ,port)))
-            (,process (inferior-lisp:make-process "sbcl"
-                                                  :startup-code startup)))
-       (inferior-lisp:start ,process)
-       (sleep 1)
-       (unwind-protect
-            (progn
-              ,@body)
-         (inferior-lisp:kill ,process)))))
+                                ,port))))
+       (inferior-lisp:with-inferior-lisp (,process "sbcl" :startup-code ,code)
+         ,@body))))
 
 (defparameter *port* 40000)
 
 (defmacro with-connection ((conn) &body body)
   (let ((port (gensym)))
     `(let ((,port (incf *port*)))
-       (with-inferior-lisp (,port)
+       (with-swank-lisp (,port)
          (let ((,conn (swank-protocol:make-connection (uiop:hostname)
                                                       ,port
                                                       :logp nil)))
