@@ -9,8 +9,6 @@
   (alexandria:with-gensyms (code process)
     `(let ((,code (list "(ql:quickload :swank)"
                         "(setf swank:*configure-emacs-indentation* nil)"
-                        "(setf swank::*enable-event-history* nil)"
-                        "(setf swank:*log-events* t)"
                         (format nil
                                 "(let ((swank::*loopback-interface* (uiop:hostname)))
                                (swank:create-server :port ~D :dont-close t))"
@@ -26,7 +24,7 @@
        (with-swank-lisp (,port)
          (let ((,conn (swank-protocol:make-connection (uiop:hostname)
                                                       ,port
-                                                      :logp nil)))
+                                                      :logp t)))
            (is-true
             (swank-protocol:connect ,conn))
            ,@body)))))

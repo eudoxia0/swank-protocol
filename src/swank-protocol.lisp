@@ -116,7 +116,7 @@ Parses length information to determine how many characters to read."
                  :port port
                  :logp logp))
 
-(defun connect (connection)
+(defmethod connect ((connection connection))
   "Connect to the remote server. Returns t."
   (with-slots (hostname port) connection
     (let ((socket (usocket:socket-connect hostname
