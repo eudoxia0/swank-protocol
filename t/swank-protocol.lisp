@@ -25,15 +25,15 @@
               ,@body)
          (inferior-lisp:kill ,process)))))
 
-(defvar *port* 40000)
+(defparameter *port* 40000)
 
-(defmacro with-connection ((conn &key logp) &body body)
+(defmacro with-connection ((conn) &body body)
   (let ((port (gensym)))
     `(let ((,port (incf *port*)))
        (with-inferior-lisp (,port)
          (let ((,conn (swank-protocol:make-connection (uiop:hostname)
                                                       ,port
-                                                      :logp ,logp)))
+                                                      :logp nil)))
            (is-true
             (swank-protocol:connect ,conn))
            ,@body)))))
@@ -111,7 +111,7 @@
     t))
 
 (test (basic-requests :depends-on connect)
-  (with-connection (conn :logp t)
+  (with-connection (conn)
     (is-false
       (swank-protocol:message-waiting-p conn))
     (is-true
@@ -121,7 +121,7 @@
        "(:emacs-rex (swank:connection-info) \"COMMON-LISP-USER\" t 1)")))
     (is-true
      (progn
-       (sleep 0.2) ;; Ensure the reply has been sent
+       (sleep 0.1) ;; Ensure the reply has been sent
        (swank-protocol:message-waiting-p conn)))
     (let ((resp (swank-protocol:read-message-string conn)))
       (is
@@ -171,7 +171,7 @@
     (with-repl (conn)
       ;; Trigger an error
       (finishes
-       (swank-protocol:request-listener-eval conn "(error \"message\")"))
+       (swank-protocol:request-listener-eval conn "(error \"first\")"))
       ;; Read debugging messages
       (let ((debug-msg (swank-protocol:read-message conn)))
         (is
@@ -196,6 +196,24 @@
         (is (equal (first message)
                    :return))
         (is (equal (first (second message))
+                   :abort))
+        (is (equal (second (second message))
+                   "NIL")))
+      (let ((message (swank-protocol:read-message conn)))
+        (is
+         (equal (first message)
+                :debug-return))
+        (is
+         (equal (second message)
+                1))
+        (is
+         (equal (third message)
+                1)))
+      ;; Read return/abort message
+      (let ((message (swank-protocol:read-message conn)))
+        (is (equal (first message)
+                   :return))
+        (is (equal (first (second message))
                    :abort)))
       ;; Send some regular code
       (finishes
@@ -212,41 +230,50 @@
                       :write-string
                       :return)
                 (loop for i from 0 to 4 collecting
-                  (first (nth i messages)))))))))
-
-#|
-(:emacs-rex
- (swank-repl:listener-eval "(error \"derp\")\n")
- "COMMON-LISP-USER" :repl-thread 13)
-(:debug 1 1
-        ("derp" "   [Condition of type SIMPLE-ERROR]" nil)
-        (("RETRY" "Retry SLIME REPL evaluation request.")
-         ("*ABORT" "Return to SLIME's top level.")
-         ("ABORT" "abort thread (#<THREAD \"repl-thread\" RUNNING {1006040033}>)"))
-        (...)
-(:debug-activate 1 1 nil)
-(:emacs-rex
- (swank:invoke-nth-restart-for-emacs 1 0)
- "COMMON-LISP-USER" 1 14)
-(:return
- (:abort "NIL")
- 14)
-(:debug-return 1 1 nil)
-(:debug 1 1
-        ("derp" "   [Condition of type SIMPLE-ERROR]" nil)
-        (("RETRY" "Retry SLIME REPL evaluation request.")
-         ("*ABORT" "Return to SLIME's top level.")
-         ("ABORT" "abort thread (#<THREAD \"repl-thread\" RUNNING {1006040033}>)"))
-        (...)
-(:debug-activate 1 1 nil)
-(:emacs-rex
- (swank:throw-to-toplevel)
- "COMMON-LISP-USER" 1 15)
-(:return
- (:abort "NIL")
- 15)
-(:debug-return 1 1 nil)
-|#
+                  (first (nth i messages))))))
+      ;; Send another error to verify the debug level
+      (finishes
+       (swank-protocol:request-listener-eval conn "(error \"second\")"))
+      ;; Read debug info
+      (let ((message (swank-protocol:read-message conn)))
+        (is
+         (equal (first message)
+                :debug))
+        (let ((info (parse-debug message)))
+          (is (equal (getf info :thread)
+                     1))))
+      (let ((message (swank-protocol:read-message conn)))
+        (is
+         (equal (first message)
+                :debug-activate))
+        (is
+         (equal (second message)
+                1))
+        (is
+         (equal (third message)
+                1)))
+      ;; Leave the debugger
+      (swank-protocol:request-throw-to-toplevel conn)
+      ;; Read return
+      (let ((message (swank-protocol:read-message conn)))
+        (is
+         (equal (first message)
+                :return)))
+      ;; Read debug-return message
+      (let ((message (swank-protocol:read-message conn)))
+        (is
+         (equal (first message)
+                :debug-return))
+        (is
+         (equal (second message)
+                1))
+        (is
+         (equal (third message)
+                1)))
+      (let ((message (swank-protocol:read-message conn)))
+        (is
+         (equal (first message)
+                :return))))))
 
 (test (restarts :depends-on debugging)
   (with-connection (conn)
@@ -273,11 +300,10 @@
                 :debug-activate)))
       ;; Invoke a restart
       (finishes
-       (swank-protocol:request-invoke-restart conn 1 0))
+       (swank-protocol:request-invoke-restart conn 1 2))
       ;; Read all messages
       (sleep 0.1)
-      (let ((messages (swank-protocol:read-all-messages conn)))
-        (print messages)))))
+      (let ((messages (swank-protocol:read-all-messages conn)))))))
 
 (test (standard-input :depends-on repl)
   (with-connection (conn)
