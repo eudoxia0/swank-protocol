@@ -24,9 +24,7 @@ First, load everything:
 Run this to start a Swank server on `localhost:5000`:
 
 ```lisp
-(setf swank:*configure-emacs-indentation* nil
-        swank::*enable-event-history* nil
-        swank:*log-events* t)
+(setf swank:*configure-emacs-indentation* nil)
 
 (let ((swank::*loopback-interface* (uiop:hostname)))
   (swank:create-server :port 5000 :dont-close t))
@@ -35,19 +33,51 @@ Run this to start a Swank server on `localhost:5000`:
 Now we connect:
 
 ```
-(connect connection)
+(defparameter connection
+  (swank-protocol-make-connection (uiop:hostname)
+                                  5000))
+
+(swank-protocol:connect connection)
 ```
 
 Now we can start sending requests:
 
 ```lisp
-
+(swank-protocol:request-connection-info connection)
 ```
 
 And reading responses:
 
 ```lisp
+(swank-protocol:read-message connection)
+```
 
+For instance, let's create a REPL. First, we require some modules:
+
+```lisp
+(swank-protocol:request-swank-require connection
+                                      '(swank-presentations swank-repl))
+(swank-protocol:request-init-presentations connection)
+```
+
+(Don't worry about the symbols' package)
+
+Now we actually create it:
+
+```lisp
+(swank-protocol:request-create-repl connection)
+```
+
+Now we can send things for evaluation:
+
+```lisp
+(swank-protocol:request-listener-eval connection "(+ 2 2)")
+```
+
+And receive the results:
+
+```lisp
+(swank-protocol:read-all-messages connection)
 ```
 
 # API
