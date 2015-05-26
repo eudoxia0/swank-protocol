@@ -42,6 +42,8 @@
            (loop until (search "DONE" output) do
              (let ((new-output (process-stdout)))
                (setf output (concatenate 'string output new-output))))))
+       (when (uiop:getenv "TRAVIS")
+         (sleep 5))
        ;; Run the code
        (unwind-protect
             (progn
