@@ -5,6 +5,11 @@
 
 ;;; Utilities
 
+(defparameter *impl*
+  (if (uiop:getenv "TRAVIS")
+      "cl"
+      "sbcl"))
+
 (defun read-all-from-stream (stream)
   "Read characters from a stream into a string until EOF."
   (concatenate 'string
