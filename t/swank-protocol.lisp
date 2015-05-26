@@ -5,16 +5,43 @@
 
 ;;; Utilities
 
+(defun read-all-from-stream (stream)
+  "Read characters from a stream into a string until EOF."
+  (concatenate 'string
+               (loop for byte = (read-char-no-hang stream nil nil)
+                     while byte collecting byte)))
+
 (defmacro with-swank-lisp ((port) &body body)
   (alexandria:with-gensyms (code process)
-    `(let ((,code (list "(ql:quickload :swank)"
-                        "(setf swank:*configure-emacs-indentation* nil)"
-                        (format nil
-                                "(let ((swank::*loopback-interface* (uiop:hostname)))
-                               (swank:create-server :port ~D :dont-close t))"
-                                ,port))))
-       (inferior-lisp:with-inferior-lisp (,process "sbcl" :startup-code ,code)
-         ,@body))))
+    `(let* ((,code (list "(ql:quickload :swank)"
+                         "(setf swank:*configure-emacs-indentation* nil)"
+                         (format nil
+                                 "(let ((swank::*loopback-interface* (uiop:hostname)))
+                                    (swank:create-server :port ~D :dont-close t))"
+                                 ,port)
+                         "(print 'done)"))
+            (,process (external-program:start "sbcl" (list "--noinform")
+                                              :input :stream
+                                              :output :stream)))
+       ;; Send input
+       (let ((stream (external-program:process-input-stream ,process)))
+         (loop for form in ,code do
+           (write-string form stream)
+           (write-char #\Newline stream)
+           (finish-output stream)))
+       ;; Wait until done
+       (flet ((process-stdout ()
+                (read-all-from-stream
+                 (external-program:process-output-stream ,process))))
+         (let ((output (process-stdout)))
+           (loop until (search "DONE" output) do
+             (let ((new-output (process-stdout)))
+               (setf output (concatenate 'string output new-output))))))
+       ;; Run the code
+       (unwind-protect
+            (progn
+              ,@body)
+         (external-program:signal-process ,process :killed)))))
 
 (defparameter *port* 40000)
 
