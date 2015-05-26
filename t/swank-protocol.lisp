@@ -5,6 +5,8 @@
 
 ;;; Utilities
 
+(defparameter *hostname* "0.0.0.0")
+
 (defparameter *impl*
   (if (uiop:getenv "TRAVIS")
       "cl"
@@ -21,8 +23,9 @@
     `(let* ((,code (list "(ql:quickload :swank)"
                          "(setf swank:*configure-emacs-indentation* nil)"
                          (format nil
-                                 "(let ((swank::*loopback-interface* (uiop:hostname)))
+                                 "(let ((swank::*loopback-interface* ~S))
                                     (swank:create-server :port ~D :dont-close t))"
+                                 *hostname*
                                  ,port)
                          "(print 'done)"))
             (,process (external-program:start "sbcl" (list "--noinform")
@@ -56,7 +59,7 @@
   (let ((port (gensym)))
     `(let ((,port (incf *port*)))
        (with-swank-lisp (,port)
-         (let ((,conn (swank-protocol:make-connection (uiop:hostname)
+         (let ((,conn (swank-protocol:make-connection *hostname*
                                                       ,port
                                                       :logp t)))
            (is-true
