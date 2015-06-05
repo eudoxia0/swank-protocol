@@ -20,7 +20,7 @@
 
 (defmacro with-swank-lisp ((port) &body body)
   (alexandria:with-gensyms (code process)
-    `(let* ((,code (list "(ql:quickload :swank)"
+    `(let* ((,code (list "(asdf:load-system :swank)"
                          "(setf swank:*configure-emacs-indentation* nil)"
                          (format nil
                                  "(let ((swank::*loopback-interface* ~S))
