@@ -2,6 +2,7 @@
 
 [![Build Status](https://travis-ci.org/eudoxia0/swank-protocol.svg?branch=master)](https://travis-ci.org/eudoxia0/swank-protocol)
 [![Coverage Status](https://coveralls.io/repos/eudoxia0/swank-protocol/badge.svg?branch=master)](https://coveralls.io/r/eudoxia0/swank-protocol?branch=master)
+[![Quicklisp](http://quickdocs.org/badge/swank-protocol.svg)](http://quickdocs.org/swank-protocol/)
 
 A low-level client for the [Swank][swank] server of [SLIME][slime].
 
