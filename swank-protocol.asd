@@ -7,7 +7,8 @@
   :bug-tracker "https://github.com/eudoxia0/swank-protocol/issues"
   :source-control (:git "git@github.com:eudoxia0/swank-protocol.git")
   :depends-on (:usocket
-               :swank)
+               :swank
+               (:feature (:not (:or :sbcl :allegro :ccl :clisp)) :babel))
   :components ((:module "src"
                 :serial t
                 :components

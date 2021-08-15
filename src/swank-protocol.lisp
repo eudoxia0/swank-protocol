@@ -44,27 +44,47 @@
   "Decode a string representing a 0-padded 16-bit hex string to an integer."
   (parse-integer string :radix 16))
 
+;;; Converting messages between string and octet-vector by UTF-8 encoding
+
+(defun string-to-octets (string)
+  #+sbcl (sb-ext:string-to-octets string :external-format :utf-8)
+  #+allegro (excl:string-to-octets string :external-format :utf8)
+  #+ccl (ccl:encode-string-to-octets string :external-format :utf-8)
+  #+clisp (ext:convert-string-to-bytes string charset:utf-8)
+  #-(or sbcl allegro ccl clisp)
+  (babel:string-to-octets string :encoding :utf-8))
+
+(defun octets-to-string (octets)
+  #+sbcl (sb-ext:octets-to-string octets :external-format :utf-8)
+  #+allegro (excl:octets-to-string octets :external-format :utf8)
+  #+ccl (ccl:decode-string-from-octets octets :external-format :utf-8)
+  #+clisp (ext:convert-string-from-bytes octets charset:utf-8)
+  #-(or sbcl allegro ccl clisp)
+  (babel:octets-to-string octets :encoding :utf-8))
+
 ;; Writing and reading messages to/from streams
 
 (defun write-message-to-stream (stream message)
   "Write a string to a stream, prefixing it with length information for Swank."
-  (let* ((length-string (encode-integer (1+ (length message))))
-         (msg (concatenate 'string
-                           length-string
-                           message
-                           (string #\Newline))))
-    (write-sequence msg stream)))
+  (let* ((message-octets (string-to-octets message))
+         (length-octets (string-to-octets (encode-integer (1+ (length message-octets)))))
+         (payload (make-array (+ 6 (length message-octets) 1)
+                              :element-type '(unsigned-byte 8))))
+    (replace payload length-octets)
+    (replace payload message-octets :start1 6)
+    (setf (aref payload (1- (length payload))) (char-code #\Newline))
+    (write-sequence payload stream)))
 
 (defun read-message-from-stream (stream)
   "Read a string from a string.
 
 Parses length information to determine how many characters to read."
-  (let ((length-string (make-array 6 :element-type 'character)))
-    (read-sequence length-string stream)
-    (let* ((length (decode-integer length-string))
-             (buffer (make-array length :element-type 'character)))
+  (let ((length-buffer (make-array 6 :element-type '(unsigned-byte 8))))
+    (read-sequence length-buffer stream)
+    (let* ((length (decode-integer (octets-to-string length-buffer)))
+           (buffer (make-array length :element-type '(unsigned-byte 8))))
       (read-sequence buffer stream)
-      buffer)))
+      (octets-to-string buffer))))
 
 ;;; Data
 
@@ -121,7 +141,7 @@ Parses length information to determine how many characters to read."
   (with-slots (hostname port) connection
     (let ((socket (usocket:socket-connect hostname
                                           port
-                                          :element-type 'character)))
+                                          :element-type '(unsigned-byte 8))))
       (setf (connection-socket connection) socket)))
   t)
 
