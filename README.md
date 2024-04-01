@@ -38,7 +38,7 @@ Now we connect:
 
 ```
 (defparameter connection
-  (swank-protocol-make-connection (uiop:hostname)
+  (swank-protocol:make-connection (uiop:hostname)
                                   5000))
 
 (swank-protocol:connect connection)
